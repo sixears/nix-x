@@ -80,16 +80,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1683196138,
-        "narHash": "sha256-5rAHdEeF8M/W18PRv3BgEXYBQ+IDArQnVLMeYxgeaHg=",
+        "lastModified": 1694599009,
+        "narHash": "sha256-VpCZmefdL5UaprCAegz2Nz/BFwyujjxAJ83HZJCW1hw=",
         "owner": "sixears",
         "repo": "nix-pkgs",
-        "rev": "0536bea6d5850bee237c2cdc169531bc03838de8",
+        "rev": "e793736f847a3075d0bc83a44b47975bb41db4ca",
         "type": "github"
       },
       "original": {
         "owner": "sixears",
-        "ref": "r0.0.1.0",
+        "ref": "r0.0.1.3",
         "repo": "nix-pkgs",
         "type": "github"
       }
