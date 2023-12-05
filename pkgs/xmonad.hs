@@ -4,6 +4,14 @@
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE UnicodeSyntax       #-}
 
+----------------------------------------------------------------------
+--                        to test this, run                         --
+-- /nix/store/q*-ghc-*-packages/bin/ghci -Wall ~/.xmonad/xmonad.hs  --
+--                                                                  --
+--                             or maybe                             --
+--                ghci -Wall ~/nix/x/pkgs/xmonad.hs                 --
+----------------------------------------------------------------------
+
 import Prelude         ( show )
 import XMonad.StackSet qualified as W
 
@@ -14,7 +22,8 @@ import Prelude ()
 
 -- base --------------------------------
 
-import Control.Monad          ( return, unless, (>>=) )
+import Control.Applicative    ( pure )
+import Control.Monad          ( return, unless, (>>), (>>=) )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Data.Eq                ( (==) )
 import Data.Function          ( flip, ($), (.) )
@@ -52,20 +61,18 @@ import Graphics.X11.Types ( KeyMask, KeySym )
 
 import XMonad ( ChangeLayout(NextLayout), Choose, Full(Full),
                 IncMasterN(IncMasterN), Mirror(Mirror), Resize(Expand, Shrink),
-                Tall(Tall), X, handleEventHook, io, kill, layoutHook, logHook,
-                manageHook, mod4Mask, modMask, refresh, screenWorkspace,
-                sendMessage, setLayout, shiftMask, spawn, terminal, windows,
-                withFocused, workspaces, xK_0, xK_9, xK_Down, xK_F1, xK_F2,
-                xK_Return, xK_Tab, xK_Up, xK_c, xK_comma, xK_e, xK_equal, xK_h,
-                xK_j, xK_k, xK_l, xK_m, xK_minus, xK_n, xK_p, xK_period,
-                xK_plus, xK_q, xK_r, xK_slash, xK_space, xK_t, xK_w, xmonad,
+                Tall(Tall), X, handleEventHook, kill, layoutHook, logHook,
+                manageHook, mod4Mask, modMask, screenWorkspace,
+                sendMessage, shiftMask, spawn, terminal, windows,
+                withFocused, workspaces, xK_0, xK_9, xK_Down, xK_F1,
+                xK_Return, xK_Tab, xK_Up, xK_comma, xK_e, xK_equal,
+                xK_k, xK_minus, xK_period,
+                xK_q, xK_r, xK_slash, xK_space, xK_w, xmonad,
                 (.|.), (<+>), (|||) )
-
-import XMonad.StackSet ( greedyView, shift )
 
 -- xmonad-contrib ----------------------
 
-import XMonad.Core                ( Layout, XConfig(XConfig), whenJust )
+import XMonad.Core                ( XConfig(XConfig), whenJust )
 import XMonad.Hooks.DynamicLog    ( dynamicLogWithPP, ppOutput, ppTitle,
                                     shorten, xmobarColor, xmobarPP )
 import XMonad.Hooks.ManageDocks   ( avoidStruts, docks, manageDocks )
@@ -73,29 +80,52 @@ import XMonad.Layout.NoBorders    ( smartBorders )
 import XMonad.Layout.ThreeColumns ( ThreeCol(ThreeCol) )
 import XMonad.Prompt              ()
 import XMonad.Prompt.Input        ( inputPrompt, (?+) )
-import XMonad.Util.EZConfig       ( additionalKeysP, mkNamedKeymap,
-                                    removeKeysP )
-import XMonad.Util.NamedActions   ( HasName, NamedAction, addDescrKeys,
-                                    addDescrKeys', addName, sendMessage',
-                                    separator, subtitle, xMessage, (^++^) )
-import XMonad.Util.Run            ( spawnPipe, unsafeSpawn )
+import XMonad.Util.EZConfig       ( mkNamedKeymap )
+import XMonad.Util.NamedActions   ( NamedAction, addDescrKeys', addName, noName
+                                  , sendMessage', separator, subtitle, xMessage )
+import XMonad.Util.Run            ( safeSpawn, spawnPipe, unsafeSpawn )
 
 --------------------------------------------------------------------------------
 
-----------------------------------------------------------------------
---                        to test this, run                         --
--- /nix/store/q*-ghc-*-packages/bin/ghci -Wall ~/.xmonad/xmonad.hs  --
-----------------------------------------------------------------------
-
 type 𝕊 = String
 
-data Context = Context { name_ :: 𝕊
+data Context = Context { _name :: 𝕊
                          {- a comment  -}
-                       , home_ :: 𝕊
+                       , _home :: 𝕊
                        }
 
-defaultLayout ∷ Choose Tall (Choose (Mirror Tall) Full) a
+----------------------- executables ------------------------
 
+alacritty_exe ∷ FilePath
+alacritty_exe = "__alacritty_exe__"
+
+byobu_exe ∷ FilePath
+byobu_exe = "__byobu_exe__"
+
+pactl_exe ∷ FilePath
+pactl_exe = "__pactl_exe__"
+
+touchpad_exe ∷ FilePath
+touchpad_exe = "__touchpad_exe__"
+
+xbacklight_exe ∷ FilePath
+xbacklight_exe = "__xbacklight_exe__"
+
+xmonad_exe ∷ FilePath
+xmonad_exe = "__xmonad_exe__"
+
+xrandr_exe ∷ FilePath
+xrandr_exe = "__xrandr_exe__"
+
+xscreensaver_command_exe ∷ FilePath
+xscreensaver_command_exe = "__xscreensaver_command_exe__"
+
+------------------------------------------------------------
+
+(↣) ∷ 𝕊 → X () → NamedAction
+(↣) = addName
+
+defaultLayout ∷ Choose Tall (Choose (Mirror Tall) Full) a
 defaultLayout = tiled ||| Mirror tiled ||| Full
   where
      -- default tiling algorithm partitions the screen into two panes
@@ -109,6 +139,9 @@ defaultLayout = tiled ||| Mirror tiled ||| Full
 
      -- Percent of screen to increment by when resizing panes
      delta   = 3/100
+
+warn ∷ MonadIO μ ⇒ 𝕊 → μ ()
+warn = liftIO ∘ hPutStrLn stderr
 
 --------------------
 
@@ -176,10 +209,24 @@ myLogHook process =
 ----------------------------------------
 
 exec ∷ MonadIO μ ⇒ 𝕊 → [𝕊] → μ ()
-exec exe args = spawn $ intercalate " " (exe : args)
+exec exe args = do
+  warn $ intercalate " " ("CMD>" : exe : args)
+  safeSpawn exe args
+
+xmonad_do ∷ MonadIO μ ⇒ 𝕊 → μ ()
+xmonad_do = exec xmonad_exe ∘ pure
+
+xmonad_recompile ∷ MonadIO μ ⇒ μ ()
+xmonad_recompile = xmonad_do "--recompile"
+
+xmonad_restart ∷ MonadIO μ ⇒ μ ()
+xmonad_restart = xmonad_do "--restart"
+
+xmonad_recompile_and_restart ∷ MonadIO μ ⇒ μ ()
+xmonad_recompile_and_restart = xmonad_recompile >> xmonad_restart
 
 pactl      ∷ MonadIO μ ⇒ [𝕊] → μ ()
-pactl args = exec "__pactl_exe__" args
+pactl args = exec pactl_exe args
 
 pactl_vol ∷ MonadIO μ ⇒ 𝕊 → μ ()
 pactl_vol x = pactl ["set-sink-volume", "@DEFAULT_SINK@", x]
@@ -188,96 +235,53 @@ pactl_mute ∷ MonadIO μ ⇒ μ ()
 pactl_mute  = pactl ["set-sink-mute", "@DEFAULT_SINK@", "toggle" ]
 
 touchpad ∷ MonadIO μ ⇒ [𝕊] → μ ()
-touchpad args = let touchpad_exe = "__touchpad_exe__"
-                in  exec touchpad_exe args
+touchpad args = exec touchpad_exe args
 
-touchpad_toggle ∷ MonadIO μ ⇒ [𝕊] → μ ()
-touchpad_toggle _ = touchpad ("toggle" : [])
+touchpad_toggle ∷ MonadIO μ ⇒ μ ()
+touchpad_toggle = touchpad ("toggle" : [])
+
+touchpad_toggle_x ∷ MonadIO μ ⇒ 𝕊 → μ ()
+touchpad_toggle_x x = touchpad ("toggle" : [x])
+
+trackpoint_toggle ∷ MonadIO μ ⇒ μ ()
+trackpoint_toggle = touchpad_toggle_x "--trackpoint"
+
+touchscreen_toggle ∷ MonadIO μ ⇒ μ ()
+touchscreen_toggle = touchpad_toggle_x "--touchscreen"
 
 xrandr ∷ MonadIO μ ⇒ [𝕊] → μ ()
-xrandr args = exec "__xrandr_exe__ " args
+xrandr args = exec xrandr_exe args
 
 xrandr_orientation ∷ MonadIO μ ⇒ 𝕊 → μ ()
 xrandr_orientation o = xrandr ["--orientation", o ]
 
-
 xbacklight ∷ MonadIO μ ⇒ [𝕊] → μ ()
-xbacklight args = exec "__xbacklight_exe__" args
+xbacklight args = exec xbacklight_exe args
 
 xscreensaver_cmd ∷ MonadIO μ ⇒ [𝕊] → μ ()
 xscreensaver_cmd args =
-  exec "__xscreensaver_command_exe__ " args
+  exec xscreensaver_command_exe args
 
 xscreensaver_lock ∷ MonadIO μ ⇒ μ ()
 xscreensaver_lock = xscreensaver_cmd ["-lock"]
 
-byobu_exe ∷ 𝕊
-byobu_exe = "__byobu_exe__"
-
 alacritty ∷ MonadIO μ ⇒ Context → 𝕊 → μ ()
-alacritty ctxt x = let args = if "" == x
-                              then [ "new" ]
-                              else [ "new", "-A", "-t", x ]
-                   in do
-                     liftIO $ hPutStrLn stderr $ intercalate " "  ("CMD>" : "__alacritty_exe__" : [ "--config-file", (home_ ctxt </> "/rc/alacritty/config.yml" )
-                                           , "--command", byobu_exe ] <> args)
-  -- byobu particularly relies on the path to access its own utility programs :-(
-  --                   liftIO $ setEnv "PATH" "/home/martyn/.nix-profiles/default--/bin/:/run/current-system/sw/bin/" True
-                     exec "/usr/bin/env" []
-                     exec "__alacritty_exe__" ([ "--config-file", (home_ ctxt </> "/rc/alacritty/config.yml" )
-                                                  , "--command", byobu_exe ] <> args)
+alacritty ctxt x = do
+  let args = [ "--config-file", config_file , "--command", byobu_exe ]
+           <> if "" == x then [ "new" ] else [ "new", "-A", "-t", x ]
+      config_file = _home ctxt </> "/rc/alacritty/config.yml"
+  exec alacritty_exe args
 
-keys ∷ Context → [(String, X ())]
-keys ctxt = [ ("M-0", windows $ greedyView "0")
-            , ("M-S-0", windows $ shift "0")
-            , ("M-\\", xscreensaver_lock)
-            , ("M--", sendMessage Shrink)
-            -- M-+ doesn't work, = is the same key but without the shift
-            , ("M-=", sendMessage Expand)
-            , ("M-S-<Space>", inputPrompt def "session" ?+ (alacritty ctxt))
-
-            {- Keys:
-
-               Yoga260 (dissolve)
-
-               Mute                (F1)
-               Vol-                (F2)
-               Vol+                (F3)
-               Bright-             (F5)
-               Bright+             (F6)
-               TouchPad Toggle     (F7)
-               WIFI                (F8) # Hardware
-               Screen Normal       (F9)
-               Screen Bottom Right (F10)
-               Screen Bottom Left  (F11)
-               Screen Invert       (F12)
-             -}
-
-            , ("<XF86AudioMute>"        , pactl_mute)
-            , ("<XF86AudioRaiseVolume>" , pactl_vol "+1.5%")
-            , ("<XF86AudioLowerVolume>" , pactl_vol "-1.5%")
-            , ("<XF86MonBrightnessUp>"  , xbacklight ["-inc", "5"])
-            , ("<XF86MonBrightnessDown>", xbacklight ["-dec", "5"])
-              -- for lenovo yoga S260
-            , ("<XF86Tools>"            , xrandr_orientation "normal")
-            , ("<XF86Search>"           , xrandr_orientation "right")
-            , ("<XF86LaunchA>"          , xrandr_orientation "left")
-            , ("<XF86Explorer>"         , xrandr_orientation "inverted")
-            -- (F7)/Projector on Lenovo Yoga 260
-            , ("<XF86Display>"          , touchpad_toggle [])
-            , ("<XF86TouchpadToggle>"   , touchpad_toggle [])
-            -- (F4)/Mic on Lenovo Yoga 260; toggle TrackPointer (nipple)
-            , ("<XF86AudioMicMute>"     , touchpad_toggle [ "--trackpoint" ])
-            -- (F5)/Play on Dell XPS 9315;  toggle TrackPad
-            , ("<XF86AudioPlay>"        , touchpad_toggle [])
-            ]
+alacritty_session ∷ Context → X ()
+alacritty_session ctxt = inputPrompt def "session" ?+ (alacritty ctxt)
 
 -- | A version of the default keys from the default configuration, but with
 -- 'NamedAction'  instead of @X ()@
 defaultKeysDescr ∷ Context → XConfig ω → [((KeyMask, KeySym), NamedAction)]
 defaultKeysDescr ctxt conf@XConfig{XMonad.modMask = modm} =
     [ subtitle "launching and killing programs"
-    , ((modm .|. shiftMask, xK_Return), addName "Launch Terminal" $ spawn $ XMonad.terminal conf) -- %! Launch terminal
+--    , ((modm .|. shiftMask, xK_Return),
+--       addName "Launch Terminal" $ spawn $ XMonad.terminal conf) -- %! Launch terminal
     , ((modm .|. shiftMask, xK_k     ), addName "Close the focused window" kill) -- %! Close the focused window
 
     , subtitle "changing layouts"
@@ -308,7 +312,7 @@ defaultKeysDescr ctxt conf@XConfig{XMonad.modMask = modm} =
 
     , subtitle "quit, or restart"
 --    , ((modm .|. shiftMask, xK_q     ), addName "Quit" $ io exitSuccess) -- %! Quit xmonad
-    , ((modm              , xK_q     ), addName "Restart" $ spawn "__xmonad_exe__ --recompile && xmonad --restart") -- %! Restart xmonad
+    , ((modm              , xK_q     ), "Restart" ↣ xmonad_recompile_and_restart) -- %! Restart xmonad
     ]
     -- mod-[1..9] %! Switch to workspace N
     -- mod-shift-[1..9] %! Move client to workspace N
@@ -326,13 +330,54 @@ defaultKeysDescr ctxt conf@XConfig{XMonad.modMask = modm} =
         , (key, sc) <- zip [xK_w, xK_e, xK_r] [0..]]
 
    ++
-   mkNamedKeymap conf [("<XF86AudioPlay>", "toggle touchpad" `addName` touchpad_toggle [])
-                          , ("M-\\", "lock screen" `addName` xscreensaver_lock)
-                          , ("M--", "shrink master area" `addName` sendMessage Shrink)
-                          -- M-+ doesn't work, = is the same key but without the shift
-                          , ("M-=", "expand master area" `addName` sendMessage Expand)
-                          , ("M-S-<Space>", "alacritty session" `addName` (inputPrompt def "session" ?+ (alacritty ctxt)))
-                        ]
+   mkNamedKeymap conf
+     [ {- Keys:
+
+          Yoga260 (dissolve)
+
+          Mute                (F1)
+          Vol-                (F2)
+          Vol+                (F3)
+          Bright-             (F5)
+          Bright+             (F6)
+          TouchPad Toggle     (F7)
+          WIFI                (F8) # Hardware
+          Screen Normal       (F9)
+          Screen Bottom Right (F10)
+          Screen Bottom Left  (F11)
+          Screen Invert       (F12)
+       -}
+
+       ("M-S-<Return>", "Launch Terminal" ↣ spawn (XMonad.terminal conf))
+
+     , ("M-\\", "lock screen" `addName` xscreensaver_lock)
+     , ("M--", "shrink master area" `addName` sendMessage Shrink)
+       -- M-+ doesn't work, = is the same key but without the shift
+     , ("M-=", "expand master area" `addName` sendMessage Expand)
+     , ("M-S-<Space>", "alacritty session"  ↣ alacritty_session ctxt)
+
+     , ("<XF86AudioMute>"        , "volume mute" ↣ pactl_mute)
+     , ("<XF86AudioRaiseVolume>" , "volume up" ↣ pactl_vol "+1.5%")
+     , ("<XF86AudioLowerVolume>" , "volume down" ↣ pactl_vol "-1.5%")
+     , ("<XF86MonBrightnessUp>"  , "backlight up" ↣ xbacklight ["-inc", "5"])
+     , ("<XF86MonBrightnessDown>", "backlight down" ↣ xbacklight ["-dec", "5"])
+       -- for lenovo yoga 260
+     , ("<XF86Tools>"            , "screen normal" ↣ xrandr_orientation "normal")
+     , ("<XF86Search>"           ,
+        "screen clockwise" ↣ xrandr_orientation "right")
+     , ("<XF86LaunchA>"          ,
+        "screen anti-clockwise" ↣ xrandr_orientation "left")
+     , ("<XF86Explorer>"         ,
+        "screen invert" ↣ xrandr_orientation "inverted")
+     , ("<XF86TouchpadToggle>"   , "toggle touchpad" ↣ trackpoint_toggle)
+     -- (F4)/Mic on Lenovo Yoga 260
+     , ("<XF86AudioMicMute>"     ,
+        "toggle track pointer (nipple)" ↣ trackpoint_toggle)
+     -- (F5)/Play on Dell XPS 9315
+     , ("<XF86AudioPlay>", "toggle touchpad" `addName` touchpad_toggle)
+     -- (F7)/Projector on Lenovo Yoga 260
+     , ("<XF86Display>"          , "toggle touchpad" ↣ touchpad_toggle)
+     ]
 
 main ∷ IO ()
 main = do
@@ -350,46 +395,16 @@ main = do
   xmobarArgs <- let rc = xmobarrc
                  in fileExist rc >>= \e -> if e then return [rc] else return []
   xmproc <- spawnPipe $ unwords ("__xmobar_exe__" : xmobarArgs)
-  let add_descr_keys ∷ HasName b ⇒ (XConfig Layout → [((KeyMask, KeySym), b)]) → XConfig l → XConfig l
-      add_descr_keys = addDescrKeys ((mod4Mask, xK_F2), xMessage)
-      add_descr_keys' ∷ XConfig l → XConfig l
-      add_descr_keys' = add_descr_keys myKeys
-  let base_config = def { modMask = mod4Mask
-                        , manageHook = manageDocks <+> manageHook def
-                        , layoutHook =
-                            avoidStruts $ smartBorders myLayout
+  let base_config = def { modMask         = mod4Mask
+                        , manageHook      = manageDocks <+> manageHook def
+                        , layoutHook      = avoidStruts $ smartBorders myLayout
                         , handleEventHook = handleEventHook def
-                        , logHook    = myLogHook xmproc
-                        , terminal   = urxvt
-                        , workspaces = [ "0", "1", "2", "3", "4"
-                                       , "5", "6", "7", "8", "9" ]
+                        , logHook         = myLogHook xmproc
+                        , terminal        = urxvt
+                        , workspaces      = [ "0", "1", "2", "3", "4"
+                                            , "5", "6", "7", "8", "9" ]
                         }
-{-
-  xmonad ∘ docks . add_descr_keys' $ (additionalKeysP base_config
-                                           (keys $ Context { name_ = name, home_ = home })
-                                           `removeKeysP` ["M-l","M4-j"])
--}
-
-  xmonad ∘ docks . addDescrKeys' ((mod4Mask, xK_F1), xMessage) (defaultKeysDescr $ Context name home)
-   $ (additionalKeysP base_config (keys $ Context { name_ = name, home_ = home })                                         `removeKeysP` ["M-l","M4-j"])
-
-myKeys ∷ XConfig l → [((KeyMask, KeySym), NamedAction)]
-myKeys c = (subtitle "Custom Keys":) $ mkNamedKeymap c $
-   [("M-x a", addName "useless message" $ spawn "xmessage foo"),
-    ("M-c", sendMessage' Expand)]
-    ^++^
-   [("<XF86AudioPlay>", spawn "mpc toggle" :: X ()),
-    ("<XF86AudioNext>", spawn "mpc next")]
-{-
-main = xmonad $ addDescrKeys ((mod4Mask, xK_F1), xMessage) myKeys
-                   def { modMask = mod4Mask }
-
-myKeys c = (subtitle "Custom Keys":) $ mkNamedKeymap c $
-   [("M-x a", addName "useless message" $ spawn "xmessage foo"),
-    ("M-c", sendMessage' Expand)]
-    ^++^
-   [("<XF86AudioPlay>", spawn "mpc toggle" :: X ()),
-    ("<XF86AudioNext>", spawn "mpc next")]
--}
+  -- M-F1 (Win F1): show keylisting
+  xmonad ∘ docks . addDescrKeys' ((mod4Mask, xK_F1), xMessage) (defaultKeysDescr $ Context name home) $ base_config
 
 -- that's all, folks! ----------------------------------------------------------
