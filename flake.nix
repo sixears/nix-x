@@ -46,7 +46,7 @@
                 repl_to   = map (x: replacements.${x}) repl_from;
                 repl_src = builtins.replaceStrings repl_from repl_to src;
               in
-                pkgs.writeTextDir "share/xmonad.hs" repl_src;
+                pkgs.writeTextDir "share/xmonad-hs" repl_src;
             # import ./pkgs/xmonad.hs.nix {
             #   inherit pkgs;
             #   inherit (my-pkgs) byobu touchpad;
