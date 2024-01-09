@@ -22,8 +22,8 @@
       in
         rec {
           packages = flake-utils.lib.flattenTree (with pkgs; {
-            inherit alacritty acpilight arandr i3status xmonad xscreensaver;
-            inherit (xorg) xdpyinfo;
+            inherit alacritty acpilight arandr xmonad xscreensaver;
+            inherit (xorg) xdpyinfo xrandr;
 
             urxvt = rxvt_unicode-with-plugins;
 
@@ -47,13 +47,6 @@
                 repl_src = builtins.replaceStrings repl_from repl_to src;
               in
                 pkgs.writeTextDir "share/xmonad-hs" repl_src;
-            # import ./pkgs/xmonad.hs.nix {
-            #   inherit pkgs;
-            #   inherit (my-pkgs) byobu touchpad;
-            # };
-
-            # xssv-ep-f
-            # xsession = import ../pkgs/xsession { inherit nixpkgs; };
           });
         }
     );
